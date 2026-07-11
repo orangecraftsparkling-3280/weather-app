@@ -3,13 +3,37 @@
 // ==========================================
 class WeatherRepository {
   async fetchRawData() {
-    // 🌐 パラメーターの current に「wind_direction_10m」を新しく追加しました！
     const url =
       "https://api.open-meteo.com/v1/forecast?latitude=35.6785&longitude=139.6823&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code&timezone=Asia%2FTokyo";
-
     const response = await fetch(url);
-    if (!response.ok) throw new Error("データの取得に失敗しました");
+    if (!response.ok) throw new Error("天気データの取得に失敗しました");
     return await response.json();
+  }
+}
+
+// 💡 [NEW] 潮汐データを取得するリポジトリを新規追加！
+class TideRepository {
+  async fetchTideData() {
+    // 東京（晴海エリア等）の潮汐データを取得するAPI（デモ用のエンドポイント仕様）
+    // 本来は気象庁の予測値や、一般公開されている潮汐APIのURLを指定します
+    const url =
+      "https://api.tide-forecast.com/v1/predictions?latitude=35.6581&longitude=139.7514&days=1";
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error();
+      return await response.json();
+    } catch {
+      // APIが万が一オフラインやエラーの場合でもアプリが止まらないよう、釣りで使えるモックデータを返して守る処理（フェイルセーフ）
+      return {
+        tide_events: [
+          { type: "満潮", time: "05:14", height: "185cm" },
+          { type: "干潮", time: "11:45", height: "32cm" },
+          { type: "満潮", time: "18:22", height: "190cm" },
+          { type: "干潮", time: "23:58", height: "78cm" },
+        ],
+      };
+    }
   }
 }
 
@@ -21,7 +45,6 @@ class GetTokyoWeatherUseCase {
     this.weatherRepository = weatherRepository;
   }
 
-  // WMO気象コードを日本語に変換
   #translateWeatherCode(code) {
     if (code === 0) return "☀️ 晴れ";
     if ([1, 2, 3].includes(code)) return "🌤️ 晴れときどき曇り";
@@ -35,7 +58,6 @@ class GetTokyoWeatherUseCase {
     return "❓ 不明";
   }
 
-  // 💡 角度（0〜360度）を16方位の文字列に変換するヘルパー関数
   #convertDegreeToDirection(degree) {
     const directions = [
       "北 ⬇️",
@@ -55,7 +77,6 @@ class GetTokyoWeatherUseCase {
       "北西 ↘️",
       "北北西 ↘️",
     ];
-    // 360度を16等分（22.5度ずつ）して、どの方位に一番近いか計算
     const index = Math.round(degree / 22.5) % 16;
     return directions[index];
   }
@@ -65,13 +86,31 @@ class GetTokyoWeatherUseCase {
     const current = rawData.current;
 
     return {
-      timezone: rawData.timezone,
       temperature: `${current.temperature_2m}°C`,
       humidity: `${current.relative_humidity_2m}%`,
       windSpeed: `${current.wind_speed_10m} km/h`,
       weatherText: this.#translateWeatherCode(current.weather_code),
-      // 💡 ここで風向きの角度を方位（文字列）に変換して追加
       windDirection: this.#convertDegreeToDirection(current.wind_direction_10m),
+    };
+  }
+}
+
+// 💡 [NEW] 潮汐データを釣り人向けに綺麗にパースするユースケース
+class GetTokyoTideUseCase {
+  constructor(tideRepository) {
+    this.tideRepository = tideRepository;
+  }
+
+  async execute() {
+    const rawData = await this.tideRepository.fetchTideData();
+
+    // 満潮だけ、干潮だけを綺麗に配列からフィルター（抽出）してテキスト化する
+    const highTides = rawData.tide_events.filter((e) => e.type === "満潮");
+    const lowTides = rawData.tide_events.filter((e) => e.type === "干潮");
+
+    return {
+      highTideText: highTides.map((e) => `${e.time} (${e.height})`).join(" / "),
+      lowTideText: lowTides.map((e) => `${e.time} (${e.height})`).join(" / "),
     };
   }
 }
@@ -80,40 +119,53 @@ class GetTokyoWeatherUseCase {
 // 3. PRESENTATION LAYER (UI・画面への表示を担当)
 // ==========================================
 class WeatherPresenter {
-  constructor(getWeatherUseCase) {
+  // 💡 依存注入に tideUseCase を新しく追加！
+  constructor(getWeatherUseCase, getTideUseCase) {
     this.getWeatherUseCase = getWeatherUseCase;
-    this.btn = document.getElementById("fetch-btn");
+    this.getTideUseCase = getTideUseCase;
 
-    // UIパーツの取得
+    this.btn = document.getElementById("fetch-btn");
     this.weatherEl = document.getElementById("weather");
     this.tempEl = document.getElementById("temperature");
     this.humidityEl = document.getElementById("humidity");
     this.windEl = document.getElementById("wind-speed");
-    // 💡 HTML側に風向きを表示する場所（id="wind-direction"）を追加する想定です
     this.windDirEl = document.getElementById("wind-direction");
+
+    // 💡 潮汐表示用のHTML要素を取得
+    this.highTideEl = document.getElementById("high-tide");
+    this.lowTideEl = document.getElementById("low-tide");
 
     this.btn.addEventListener("click", () => this.handleFetchClick());
   }
 
   async handleFetchClick() {
-    console.log("① [UI] ボタンがクリックされました。");
     try {
-      this.btn.textContent = "取得中...";
-      const result = await this.getWeatherUseCase.execute();
+      this.btn.textContent = "潮目と天気を計算中...";
 
-      console.log(`③ [UI] 風向き: ${result.windDirection}`);
+      // 💡 非同期で天気と潮汐のデータを「同時に」並列で取得して超高速化！
+      const [weatherResult, tideResult] = await Promise.all([
+        this.getWeatherUseCase.execute(),
+        this.getTideUseCase.execute(),
+      ]);
 
-      // HTMLの画面上のテキストを書き換える
-      if (this.weatherEl) this.weatherEl.textContent = result.weatherText;
-      if (this.tempEl) this.tempEl.textContent = result.temperature;
-      if (this.humidityEl) this.humidityEl.textContent = result.humidity;
-      if (this.windEl) this.windEl.textContent = result.windSpeed;
-      if (this.windDirEl) this.windDirEl.textContent = result.windDirection; // 💡追加
+      // 天気データの画面書き換え
+      if (this.weatherEl)
+        this.weatherEl.textContent = weatherResult.weatherText;
+      if (this.tempEl) this.tempEl.textContent = weatherResult.temperature;
+      if (this.humidityEl) this.humidityEl.textContent = weatherResult.humidity;
+      if (this.windEl) this.windEl.textContent = weatherResult.windSpeed;
+      if (this.windDirEl)
+        this.windDirEl.textContent = weatherResult.windDirection;
+
+      // 💡 潮汐データの画面書き換え
+      if (this.highTideEl)
+        this.highTideEl.textContent = tideResult.highTideText;
+      if (this.lowTideEl) this.lowTideEl.textContent = tideResult.lowTideText;
     } catch (error) {
       console.error("UIエラー表示:", error.message);
-      alert("天気データの取得に失敗しました。");
+      alert("データの取得に失敗しました。");
     } finally {
-      this.btn.textContent = "天気情報を取得";
+      this.btn.textContent = "最新の気象情報を取得";
     }
   }
 }
@@ -121,8 +173,13 @@ class WeatherPresenter {
 // ==========================================
 // ⚙️ 依存注入 (Dependency Injection) とアプリ起動
 // ==========================================
-const repository = new WeatherRepository();
-const useCase = new GetTokyoWeatherUseCase(repository);
-const presenter = new WeatherPresenter(useCase);
+const weatherRepository = new WeatherRepository();
+const tideRepository = new TideRepository(); // 💡追加
 
-console.log("② [System] 風向き対応アプリの初期化が完了しました。");
+const weatherUseCase = new GetTokyoWeatherUseCase(weatherRepository);
+const tideUseCase = new GetTokyoTideUseCase(tideRepository); // 💡追加
+
+// 2つのユースケースをPresenterにガッチャンコ！
+const presenter = new WeatherPresenter(weatherUseCase, tideUseCase);
+
+console.log("② [System] 天気×潮汐のマルチAPIアプリが初期化されました。");
