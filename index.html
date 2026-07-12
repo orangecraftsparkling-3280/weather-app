@@ -19,11 +19,19 @@
       ></select>
       <div class="location-selector">
         <!-- 追加: 現在地を取得するボタン -->
-        <button id="geo-btn" class="w-full bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-900 transition-all active:scale-95 shadow-lg">
+        <button
+          id="geo-btn"
+          class="w-full bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-900 transition-all active:scale-95 shadow-lg"
+        >
           📍 現在地から取得
         </button>
       </div>
-
+      <div
+        id="current-location-display"
+        style="margin-top: 10px; font-weight: bold"
+      >
+        現在の表示：---
+      </div>
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div class="flex justify-between border-b pb-2">
           <span class="text-slate-500">天気</span

@@ -38,6 +38,7 @@ class WeatherApp {
     this.select = document.getElementById("location-select");
     this.fetchBtn = document.getElementById("fetch-btn");
     this.geoBtn = document.getElementById("geo-btn");
+    this.locationDisplay = document.getElementById("current-location-display");
 
     this.init();
     this.fetchBtn.addEventListener("click", () => this.handleSelect());
@@ -45,15 +46,16 @@ class WeatherApp {
   }
 
   init() {
-    JAPAN_LOCATIONS.forEach((loc) => {
-      const opt = document.createElement("option");
-      opt.value = `${loc.lat},${loc.lon}`;
-      opt.textContent = loc.name;
-      this.select.appendChild(opt);
-    });
+    if (typeof JAPAN_LOCATIONS !== "undefined") {
+      JAPAN_LOCATIONS.forEach((loc) => {
+        const opt = document.createElement("option");
+        opt.value = `${loc.lat},${loc.lon}`;
+        opt.textContent = loc.name;
+        this.select.appendChild(opt);
+      });
+    }
   }
 
-  // 共通の表示更新処理
   async updateUI(lat, lon) {
     try {
       const data = await this.service.getCurrentWeather(lat, lon);
@@ -73,13 +75,14 @@ class WeatherApp {
     }
   }
 
-  // セレクトボックスからの取得
   handleSelect() {
-    const [lat, lon] = this.select.value.split(",");
+    const selectedOption = this.select.options[this.select.selectedIndex];
+    const [lat, lon] = selectedOption.value.split(",");
+
     this.updateUI(lat, lon);
+    this.locationDisplay.textContent = `現在の表示：${selectedOption.text}`;
   }
 
-  // 現在地からの取得
   handleGeolocation() {
     if (!navigator.geolocation)
       return alert("ブラウザが位置情報に対応していません。");
@@ -87,7 +90,11 @@ class WeatherApp {
     this.geoBtn.textContent = "⏳ 取得中...";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        this.updateUI(pos.coords.latitude, pos.coords.longitude);
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        this.updateUI(lat, lon);
+        this.locationDisplay.textContent = `現在の表示：現在地（緯度:${lat.toFixed(2)}, 経度:${lon.toFixed(2)}）`;
         this.geoBtn.textContent = "📍 現在地";
       },
       () => {
