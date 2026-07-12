@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>天気予報ステーション</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=" />
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-slate-50 min-h-screen flex items-center justify-center p-4">
@@ -17,7 +18,7 @@
         class="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-slate-400 outline-none transition-all"
       ></select>
 
-      <div class="space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-4 text-sm">
         <div class="flex justify-between border-b pb-2">
           <span class="text-slate-500">天気</span
           ><span id="weather" class="font-bold text-slate-700">-</span>
@@ -25,6 +26,18 @@
         <div class="flex justify-between border-b pb-2">
           <span class="text-slate-500">気温</span
           ><span id="temperature" class="font-bold text-slate-700">-</span>
+        </div>
+        <div class="flex justify-between border-b pb-2">
+          <span class="text-slate-500">湿度</span><br />
+          <span id="humidity" class="font-bold text-slate-700">-</span>
+        </div>
+        <div class="flex justify-between border-b pb-2">
+          <span class="text-slate-500">体感温度</span><br />
+          <span id="apparent-temp" class="font-bold text-slate-700">-</span>
+        </div>
+        <div class="flex justify-between border-b pb-2">
+          <span class="text-slate-500">風速</span><br />
+          <span id="wind-speed" class="font-bold text-slate-700">-</span>
         </div>
       </div>
 
