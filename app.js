@@ -6,6 +6,22 @@ class WeatherService {
     return await response.json();
   }
 
+  async getAddress(lat, lon) {
+    try {
+      const url = `https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.results) {
+        return data.results.muniNm || data.results.lv01Nm || "場所不明";
+      }
+      return null;
+    } catch (e) {
+      console.error("住所取得エラー:", e);
+      return null;
+    }
+  }
+
   getWeatherDescription(code) {
     const descriptions = {
       0: "☀️ 快晴",
@@ -83,18 +99,28 @@ class WeatherApp {
     this.locationDisplay.textContent = `現在の表示：${selectedOption.text}`;
   }
 
-  handleGeolocation() {
+  async handleGeolocation() {
     if (!navigator.geolocation)
       return alert("ブラウザが位置情報に対応していません。");
 
     this.geoBtn.textContent = "⏳ 取得中...";
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
+        // asyncを追加
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
 
         this.updateUI(lat, lon);
-        this.locationDisplay.textContent = `現在の表示：現在地（緯度:${lat.toFixed(2)}, 経度:${lon.toFixed(2)}）`;
+
+        // APIを呼び出して住所を取得
+        const address = await this.service.getAddress(lat, lon);
+
+        // 住所が取れたら市町村名を表示、取れなければ緯度経度を表示
+        const locationText = address
+          ? address
+          : `緯度:${lat.toFixed(2)}, 経度:${lon.toFixed(2)}`;
+        this.locationDisplay.textContent = `現在の表示：${locationText}`;
+
         this.geoBtn.textContent = "📍 現在地";
       },
       () => {
