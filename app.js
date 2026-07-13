@@ -1,11 +1,11 @@
 class WeatherService {
   async getCurrentWeather(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
+    // hourly=temperature_2m を追加して、時間ごとの気温を取得
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&hourly=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
     const response = await fetch(url);
     if (!response.ok) throw new Error("API通信エラー");
     return await response.json();
   }
-
   async getAddress(lat, lon) {
     try {
       const response = await fetch(
@@ -86,6 +86,24 @@ class WeatherApp {
     this.geoBtn.addEventListener("click", () => this.handleGeolocation());
   }
 
+  // 日付フォーマット用ヘルパー
+  formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("ja-JP", {
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+    });
+  }
+
+  // 今日の日付をセットするメソッド
+  updateTodayDate() {
+    const todayDateEl = document.getElementById("today-date");
+    if (todayDateEl) {
+      todayDateEl.textContent = this.formatDate(new Date());
+    }
+  }
+
   init() {
     if (typeof JAPAN_LOCATIONS !== "undefined") {
       JAPAN_LOCATIONS.forEach((loc) => {
@@ -108,7 +126,11 @@ class WeatherApp {
   async updateUI(lat, lon) {
     try {
       const data = await this.service.getCurrentWeather(lat, lon);
-      const { current: curr, daily } = data;
+      const { current: curr, daily, hourly } = data;
+
+      // 日付の更新
+      this.updateTodayDate();
+
       this.updateBackgroundEffect(curr.weather_code);
 
       document.getElementById("weather").textContent =
@@ -123,68 +145,63 @@ class WeatherApp {
         `${curr.wind_speed_10m} km/h`;
       document.getElementById("weather-icon").textContent =
         this.service.getWeatherIcon(curr.weather_code);
-      document.getElementById("weather").textContent =
-        this.service.getWeatherDescription(curr.weather_code);
 
       const listEl = document.getElementById("forecast-list");
       listEl.innerHTML = daily.time
         .map(
           (date, i) => `
         <div class="flex items-center justify-between px-4 py-2 bg-white/30 rounded-xl">
-          <span class="font-bold">${new Date(date).toLocaleDateString("ja-JP", { weekday: "short" })}</span>
+          <span class="font-bold">${this.formatDate(date)}</span>
           <span class="text-xl">${this.service.getWeatherIcon(daily.weather_code[i])}</span>
           <span class="text-sm">${daily.temperature_2m_max[i]}° / ${daily.temperature_2m_min[i]}°</span>
         </div>
       `,
         )
         .join("");
+
+      const hourlyEl = document.getElementById("hourly-forecast");
+      hourlyEl.innerHTML = hourly.time
+        .slice(0, 24) // 最初の12時間分のみ抽出
+        .map((time, i) => {
+          const hour = new Date(time).getHours();
+          return `
+          <div class="flex flex-col items-center min-w-[60px] p-2 bg-white/20 rounded-xl">
+            <span class="text-xs">${hour}:00</span>
+            <span class="font-bold">${hourly.temperature_2m[i]}°C</span>
+          </div>
+        `;
+        })
+        .join("");
     } catch {
       alert("取得失敗");
     }
   }
-  updateBackgroundEffect(code) {
-    // 既存の背景関連のクラスをすべてリセット
-    this.bodyEl.className =
-      "min-h-screen flex items-center justify-center p-4 transition-all duration-1000";
 
-    // 天気コードに基づいてクラスを付与
-    if (code === 0 || code === 1)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-yellow-100",
-        "to-yellow-400",
-      );
-    else if (code === 2 || code === 3)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-slate-200",
-        "to-slate-500",
-      );
-    else if (code >= 51 && code <= 65)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-blue-200",
-        "to-blue-600",
-      );
-    else if (code >= 71 && code <= 77)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-sky-100",
-        "to-blue-200",
-      );
-    else if (code >= 95)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-purple-300",
-        "to-indigo-900",
-      );
-    else
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-blue-100",
-        "to-indigo-200",
-      );
+  updateBackgroundEffect(code) {
+    const hour = new Date().getHours();
+    const isNight = hour >= 19 || hour < 5;
+
+    // 基本のグラデーションを定義
+    let gradient = "";
+    if (code === 0 || code === 1) gradient = "from-yellow-100 to-yellow-400";
+    else if (code === 2 || code === 3) gradient = "from-slate-200 to-slate-500";
+    else if (code >= 51 && code <= 65) gradient = "from-blue-200 to-blue-600";
+    else if (code >= 71 && code <= 77) gradient = "from-sky-100 to-blue-200";
+    else if (code >= 95) gradient = "from-purple-300 to-indigo-900";
+    else gradient = "from-blue-100 to-indigo-200";
+
+    // Bodyのクラスを構築
+    this.bodyEl.className = `min-h-screen flex items-center justify-center p-4 transition-all duration-1000 bg-gradient-to-br ${gradient}`;
+
+    // 【重要】外側（Body）を夜間だけ暗くする処理
+    if (isNight) {
+      // 画面全体に「暗いフィルター」をかけるイメージ
+      this.bodyEl.classList.add("brightness-50");
+    } else {
+      this.bodyEl.classList.remove("brightness-50");
+    }
   }
+
   async handleGeolocation() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       this.updateUI(pos.coords.latitude, pos.coords.longitude);
