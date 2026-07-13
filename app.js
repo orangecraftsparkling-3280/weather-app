@@ -1,11 +1,11 @@
 class WeatherService {
   async getCurrentWeather(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
+    // hourly=temperature_2m を追加して、時間ごとの気温を取得
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&hourly=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
     const response = await fetch(url);
     if (!response.ok) throw new Error("API通信エラー");
     return await response.json();
   }
-
   async getAddress(lat, lon) {
     try {
       const response = await fetch(
@@ -126,7 +126,7 @@ class WeatherApp {
   async updateUI(lat, lon) {
     try {
       const data = await this.service.getCurrentWeather(lat, lon);
-      const { current: curr, daily } = data;
+      const { current: curr, daily, hourly } = data;
 
       // 日付の更新
       this.updateTodayDate();
@@ -157,6 +157,20 @@ class WeatherApp {
         </div>
       `,
         )
+        .join("");
+
+      const hourlyEl = document.getElementById("hourly-forecast");
+      hourlyEl.innerHTML = hourly.time
+        .slice(0, 24) // 最初の12時間分のみ抽出
+        .map((time, i) => {
+          const hour = new Date(time).getHours();
+          return `
+          <div class="flex flex-col items-center min-w-[60px] p-2 bg-white/20 rounded-xl">
+            <span class="text-xs">${hour}:00</span>
+            <span class="font-bold">${hourly.temperature_2m[i]}°C</span>
+          </div>
+        `;
+        })
         .join("");
     } catch {
       alert("取得失敗");
