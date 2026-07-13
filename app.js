@@ -162,49 +162,32 @@ class WeatherApp {
       alert("取得失敗");
     }
   }
-  updateBackgroundEffect(code) {
-    // 既存の背景関連のクラスをすべてリセット
-    this.bodyEl.className =
-      "min-h-screen flex items-center justify-center p-4 transition-all duration-1000";
 
-    // 天気コードに基づいてクラスを付与
-    if (code === 0 || code === 1)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-yellow-100",
-        "to-yellow-400",
-      );
-    else if (code === 2 || code === 3)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-slate-200",
-        "to-slate-500",
-      );
-    else if (code >= 51 && code <= 65)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-blue-200",
-        "to-blue-600",
-      );
-    else if (code >= 71 && code <= 77)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-sky-100",
-        "to-blue-200",
-      );
-    else if (code >= 95)
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-purple-300",
-        "to-indigo-900",
-      );
-    else
-      this.bodyEl.classList.add(
-        "bg-gradient-to-br",
-        "from-blue-100",
-        "to-indigo-200",
-      );
+  updateBackgroundEffect(code) {
+    const hour = new Date().getHours();
+    const isNight = hour >= 19 || hour < 5;
+
+    // 基本のグラデーションを定義
+    let gradient = "";
+    if (code === 0 || code === 1) gradient = "from-yellow-100 to-yellow-400";
+    else if (code === 2 || code === 3) gradient = "from-slate-200 to-slate-500";
+    else if (code >= 51 && code <= 65) gradient = "from-blue-200 to-blue-600";
+    else if (code >= 71 && code <= 77) gradient = "from-sky-100 to-blue-200";
+    else if (code >= 95) gradient = "from-purple-300 to-indigo-900";
+    else gradient = "from-blue-100 to-indigo-200";
+
+    // Bodyのクラスを構築
+    this.bodyEl.className = `min-h-screen flex items-center justify-center p-4 transition-all duration-1000 bg-gradient-to-br ${gradient}`;
+
+    // 【重要】外側（Body）を夜間だけ暗くする処理
+    if (isNight) {
+      // 画面全体に「暗いフィルター」をかけるイメージ
+      this.bodyEl.classList.add("brightness-50");
+    } else {
+      this.bodyEl.classList.remove("brightness-50");
+    }
   }
+
   async handleGeolocation() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       this.updateUI(pos.coords.latitude, pos.coords.longitude);
