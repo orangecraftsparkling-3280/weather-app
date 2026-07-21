@@ -1,9 +1,9 @@
 import { WeatherService } from "./weatherService.js";
 import { JAPAN_LOCATIONS } from "./locations.js";
 
-class WeatherApp {
-  constructor() {
-    this.weatherService = new WeatherService();
+export default class WeatherApp {
+  constructor(weatherService = null) {
+    this.weatherService = weatherService || new WeatherService();
     this.initElements();
     this.initLocations();
     this.initEvents();
@@ -25,15 +25,13 @@ class WeatherApp {
     this.bodyEl = document.getElementById("app-body") || document.body;
   }
 
-  /**
-   * 1. JAPAN_LOCATIONS（固定リスト）と Laravel DB の登録済み地点を読込
-   */
   async initLocations() {
     if (!this.locationSelect) return;
 
-    // 初期化
     this.locationSelect.innerHTML =
       '<option value="">地域を選択してください</option>';
+
+    const existingKeys = new Set();
 
     // --- 主要都市（固定リスト）---
     const fixedGroup = document.createElement("optgroup");
@@ -47,26 +45,37 @@ class WeatherApp {
       });
       option.textContent = loc.name;
       fixedGroup.appendChild(option);
+      existingKeys.add(loc.name);
     });
+
     this.locationSelect.appendChild(fixedGroup);
 
-    // --- Laravel DB（API）からの登録済み地点取得 ---
+    // --- DBからの登録済み地点 ---
     try {
       const savedLocations = await this.weatherService.getLocations();
       if (Array.isArray(savedLocations) && savedLocations.length > 0) {
         const dbGroup = document.createElement("optgroup");
         dbGroup.label = "保存済み地点";
         savedLocations.forEach((loc) => {
-          const option = document.createElement("option");
           const name = loc.city_name || loc.name || "名称不明";
+
+          // 重複チェック（主要都市または追加済みならスキップ）
+          if (existingKeys.has(name)) return;
+
           const lat = loc.latitude || loc.lat;
           const lon = loc.longitude || loc.lon;
 
+          const option = document.createElement("option");
           option.value = JSON.stringify({ lat, lon, name });
           option.textContent = `★ ${name}`;
           dbGroup.appendChild(option);
+
+          existingKeys.add(name);
         });
-        this.locationSelect.appendChild(dbGroup);
+
+        if (dbGroup.children.length > 0) {
+          this.locationSelect.appendChild(dbGroup);
+        }
       }
     } catch (error) {
       console.warn("地点リスト取得失敗:", error);
@@ -89,43 +98,15 @@ class WeatherApp {
     }
   }
 
-  formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("ja-JP", {
-      month: "numeric",
-      day: "numeric",
-      weekday: "short",
-    });
-  }
-
-  updateTodayDate() {
-    if (this.todayDateEl) {
-      this.todayDateEl.textContent = this.formatDate(new Date());
-    }
-  }
-
-  async fetchWeather(lat, lon, name) {
-    try {
-      if (this.locationName) {
-        this.locationName.textContent = `${name} の天気情報を取得中...`;
-      }
-      const data = await this.weatherService.getCurrentWeather(lat, lon);
-      this.updateUI(data, name);
-    } catch (error) {
-      console.error("天気取得エラー:", error);
-      if (this.locationName) {
-        this.locationName.textContent = "天気情報の取得に失敗しました";
-      }
-    }
-  }
-
-  /**
-   * 2. 現在地取得・国土地理院APIで市町村名取得・Laravelへ保存
-   */
   getCurrentLocationWeather() {
     if (!navigator.geolocation) {
       alert("お使いのブラウザは位置情報取得に対応していません");
       return;
+    }
+
+    if (this.geoBtn) {
+      if (this.geoBtn.disabled) return;
+      this.geoBtn.disabled = true;
     }
 
     if (this.locationName) {
@@ -134,38 +115,43 @@ class WeatherApp {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        let placeName = "現在地";
-
-        // 国土地理院API (getAddress) で市町村名を取得
+        // コールバック全体を大きな try-catch-finally で包む
         try {
-          const addressName = await this.weatherService.getAddress(lat, lon);
-          if (addressName) {
-            placeName = addressName;
-          }
-        } catch (geoErr) {
-          console.warn("地名取得エラー（「現在地」として続行します）:", geoErr);
-        }
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          let placeName = "現在地";
 
-        // 天気を取得して描画
-        await this.fetchWeather(lat, lon, placeName);
-
-        // Laravel DB へ登録 (cityName, countryCode, lat, lon)
-        try {
-          const result = await this.weatherService.registerLocation(
-            placeName,
-            "JP",
-            lat,
-            lon,
-          );
-          if (result) {
-            console.log("登録成功:", result);
-            // セレクトボックスを再読込して★付きで反映
-            await this.initLocations();
+          try {
+            const addressName = await this.weatherService.getAddress(lat, lon);
+            if (addressName) placeName = addressName;
+          } catch (geoErr) {
+            console.warn(
+              "地名取得エラー（「現在地」として続行します）:",
+              geoErr,
+            );
           }
-        } catch (dbErr) {
-          console.warn("保存エラー:", dbErr);
+
+          // APIエラーが起きても確実に catch / finally に飛ぶようにする
+          await this.fetchWeather(lat, lon, placeName);
+
+          try {
+            const result = await this.weatherService.registerLocation(
+              placeName,
+              "JP",
+              lat,
+              lon,
+            );
+            if (result) {
+              await this.initLocations();
+            }
+          } catch (dbErr) {
+            console.warn("保存エラー:", dbErr);
+          }
+        } catch (error) {
+          console.error("現在地天気取得エラー:", error);
+        } finally {
+          // 正常終了でもAPIエラーでも、確実にボタンを再有効化する
+          if (this.geoBtn) this.geoBtn.disabled = false;
         }
       },
       (error) => {
@@ -174,8 +160,22 @@ class WeatherApp {
         if (this.locationName) {
           this.locationName.textContent = "場所を選択してください";
         }
+        if (this.geoBtn) this.geoBtn.disabled = false;
       },
     );
+  }
+
+  async fetchWeather(lat, lon, placeName) {
+    try {
+      if (this.locationName) {
+        this.locationName.textContent = `${placeName}の天気を取得中...`;
+      }
+      const data = await this.weatherService.getCurrentWeather(lat, lon);
+      this.updateUI(data, placeName);
+    } catch (error) {
+      console.error("天気データ取得エラー:", error);
+      alert("天気データの取得に失敗しました");
+    }
   }
 
   updateUI(data, name) {
@@ -264,6 +264,24 @@ class WeatherApp {
       this.bodyEl.classList.remove("brightness-50");
     }
   }
+  updateTodayDate() {
+    if (!this.todayDateEl) return;
+    const today = new Date();
+    const options = {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    };
+    // 例: "2026年7月21日(火)" のようにフォーマット
+    this.todayDateEl.textContent = today.toLocaleDateString("ja-JP", options);
+  }
+
+  formatDate(dateStr) {
+    const date = new Date(dateStr);
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  }
+
 }
 
 document.addEventListener("DOMContentLoaded", () => new WeatherApp());
